@@ -83,14 +83,19 @@ curl http://YOUR_IP:5001/api/health
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/heartbeat` | GET/POST | Connection test and heartbeat |
-| `/api/track` | POST | Receive track telemetry data |
+| `/api/track` | POST | Receive track telemetry data (JSON) |
+| `/upload_track` | POST | Receive crop images (multipart/form-data) |
 | `/api/health` | GET | Health check |
 
 ## Data Storage
 
-Track data is saved to `./received_data/{DOT_DIRECTORY}/track_{TRACK_ID}.json`
+### Track Telemetry (JSON)
+- **Location**: `./received_data/{DOT_DIRECTORY}/track_{TRACK_ID}.json`
+- **Content**: JSON payload with track metadata and detections
 
-Each file contains the JSON payload sent by the iOS app with track metadata and detections.
+### Crop Images (JPEG)
+- **Location**: `./received_data/{DOT_DIRECTORY}/{DOT_DIRECTORY}_crops/{TRACK_ID}/frame_000000.jpg`
+- **Content**: JPEG images from insect detections
 
 ## License
 

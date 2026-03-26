@@ -19,6 +19,7 @@ from datetime import datetime
 import logging
 import os
 import json
+import re
 
 # Enable CORS for local network testing
 from flask_cors import CORS
@@ -133,6 +134,100 @@ def receive_track():
         "track_id": track_id,
         "received": True
     }), 200
+
+
+@app.route('/upload_track', methods=['POST'])
+def upload_track():
+    """
+    Receive crop images from iOS app (multipart/form-data).
+    
+    Headers:
+        X-Device-ID: Device UUID
+        X-Device-Name: Device name
+        X-DOT-Directory: DOT directory name (e.g., "uuid_20260309_143022")
+        X-Track-ID: Track UUID (folder name inside crops)
+    
+    Form Data:
+        files: JPEG files with filenames like "frame_000000.jpg"
+    
+    Creates directory structure:
+        ./received_data/{dot_directory}/{dot_directory}_crops/{track_id}/
+    
+    Returns:
+        200 OK on success
+        400 Bad Request on missing data
+    """
+    device_id = request.headers.get('X-Device-ID', 'unknown')
+    device_name = request.headers.get('X-Device-Name', 'Unknown Device')
+    ios_dot_directory = request.headers.get('X-DOT-Directory', '')
+    track_id = request.headers.get('X-Track-ID', '')
+    
+    # Validate required headers
+    if not ios_dot_directory:
+        logger.error("Missing X-DOT-Directory header")
+        return jsonify({"error": "Missing X-DOT-Directory header"}), 400
+    
+    if not track_id:
+        logger.error("Missing X-Track-ID header")
+        return jsonify({"error": "Missing X-Track-ID header"}), 400
+    
+    # Clean track_id (prevent path traversal)
+    track_id = Path(track_id).name
+    
+    logger.info(f"[UPLOAD] Track upload from {device_name}")
+    logger.info(f"  DOT Directory: {ios_dot_directory}")
+    logger.info(f"  Track: {track_id[:8]}...")
+    
+    try:
+        # Build directory structure
+        # ./received_data/{dot_directory}/{dot_directory}_crops/{track_id}/
+        dot_dir_path = DATA_DIR / ios_dot_directory
+        crops_dir_path = dot_dir_path / f"{ios_dot_directory}_crops"
+        track_dir_path = crops_dir_path / track_id
+        
+        # Create directories
+        track_dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Process uploaded files
+        files = request.files.getlist('files')
+        if not files:
+            logger.warning("No files received in upload")
+            return jsonify({"error": "No files uploaded"}), 400
+        
+        saved_count = 0
+        for file in files:
+            if not file.filename:
+                continue
+            
+            # Extract filename and validate it's a frame file
+            filename = Path(file.filename).name
+            
+            # Validate frame_000000.jpg format
+            if not re.match(r'frame_\d+\.jpg', filename, re.IGNORECASE):
+                logger.warning(f"Skipping invalid filename: {filename}")
+                continue
+            
+            # Ensure consistent naming
+            frame_num = int(filename.split('_')[1].split('.')[0])
+            target_filename = f"frame_{frame_num:06d}.jpg"
+            full_path = track_dir_path / target_filename
+            
+            # Save file
+            file.save(full_path)
+            saved_count += 1
+        
+        logger.info(f"  Saved {saved_count} frames to {track_dir_path}")
+        
+        return jsonify({
+            "status": "success",
+            "dot_directory": ios_dot_directory,
+            "track_id": track_id,
+            "frames_saved": saved_count
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error saving upload: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/health', methods=['GET'])
