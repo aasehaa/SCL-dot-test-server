@@ -247,6 +247,152 @@ def health():
     }), 200
 
 
+@app.route('/upload_background', methods=['POST'])
+def upload_background():
+    """
+    Receive background reference image from iOS app.
+    
+    Headers:
+        X-Device-ID: Device UUID
+        X-Device-Name: Device name
+    
+    Form Data:
+        file: JPEG image
+    
+    Saves to: ./received_data/backgrounds/
+    
+    Returns:
+        200 OK on success
+    """
+    device_id = request.headers.get('X-Device-ID', 'unknown')
+    device_name = request.headers.get('X-Device-Name', 'Unknown Device')
+    
+    backgrounds_dir = DATA_DIR / "backgrounds"
+    backgrounds_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        file = request.files.get('file')
+        if not file:
+            logger.warning("No file in background upload")
+            return jsonify({"error": "No file uploaded"}), 400
+        
+        filename = f"bg_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+        filepath = backgrounds_dir / filename
+        file.save(filepath)
+        
+        logger.info(f"[BG] Received from {device_name} ({device_id[:8]}...)")
+        logger.info(f"  Saved to: {filepath}")
+        
+        return jsonify({
+            "status": "success",
+            "filename": filename,
+            "saved_to": str(filepath)
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error saving background: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/upload_crops', methods=['POST'])
+def upload_crops():
+    """
+    Receive crop images from iOS app (multipart/form-data).
+    
+    Headers:
+        X-Device-ID: Device UUID
+        X-Device-Name: Device name
+        X-Track-ID: Track UUID
+    
+    Form Data:
+        files: JPEG files
+    
+    Returns:
+        200 OK on success
+    """
+    device_id = request.headers.get('X-Device-ID', 'unknown')
+    device_name = request.headers.get('X-Device-Name', 'Unknown Device')
+    track_id = request.headers.get('X-Track-ID', 'unknown')
+    
+    crops_dir = DATA_DIR / "crops" / track_id
+    crops_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        files = request.files.getlist('files')
+        if not files:
+            logger.warning("No files in crop upload")
+            return jsonify({"error": "No files uploaded"}), 400
+        
+        saved_count = 0
+        for file in files:
+            if file.filename:
+                file.save(crops_dir / file.filename)
+                saved_count += 1
+        
+        logger.info(f"[CROPS] Received from {device_name} ({device_id[:8]}...)")
+        logger.info(f"  Track: {track_id[:8]}... | Saved: {saved_count} frames")
+        
+        return jsonify({
+            "status": "success",
+            "track_id": track_id,
+            "frames_saved": saved_count
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error saving crops: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/upload_video', methods=['POST'])
+def upload_video():
+    """
+    Receive video clip from iOS app.
+    
+    Headers:
+        X-Device-ID: Device UUID
+        X-Device-Name: Device name
+    
+    Form Data:
+        file: MP4 video file
+    
+    Saves to: ./received_data/videos/
+    
+    Returns:
+        200 OK on success
+    """
+    device_id = request.headers.get('X-Device-ID', 'unknown')
+    device_name = request.headers.get('X-Device-Name', 'Unknown Device')
+    
+    videos_dir = DATA_DIR / "videos"
+    videos_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        file = request.files.get('file')
+        if not file:
+            logger.warning("No file in video upload")
+            return jsonify({"error": "No file uploaded"}), 400
+        
+        # Preserve original filename or generate timestamped one
+        filename = file.filename or f"clip_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        filepath = videos_dir / filename
+        file.save(filepath)
+        
+        size_mb = filepath.stat().st_size / (1024 * 1024)
+        logger.info(f"[VIDEO] Received from {device_name} ({device_id[:8]}...)")
+        logger.info(f"  File: {filename} ({size_mb:.1f} MB)")
+        
+        return jsonify({
+            "status": "success",
+            "filename": filename,
+            "saved_to": str(filepath),
+            "size_mb": round(size_mb, 1)
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error saving video: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     local_ip = get_local_ip()
     
@@ -260,9 +406,12 @@ if __name__ == '__main__':
     print(f"  Data Storage:  {DATA_DIR.absolute()}")
     print()
     print("  Endpoints:")
-    print(f"    GET/POST /api/heartbeat  - Connection test / heartbeat")
-    print(f"    POST     /api/track      - Receive track telemetry")
-    print(f"    GET      /api/health     - Health check")
+    print(f"    GET/POST /api/heartbeat   - Connection test / heartbeat")
+    print(f"    POST     /api/track     - Receive track telemetry")
+    print(f"    POST     /upload_crops   - Upload crop images")
+    print(f"    POST     /upload_background - Upload background image")
+    print(f"    POST     /upload_video  - Upload video clip")
+    print(f"    GET      /api/health    - Health check")
     print()
     print("=" * 70)
     print()

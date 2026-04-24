@@ -53,6 +53,9 @@ This minimal server allows the iOS app to:
 - **Test connection** - Verify the app can reach the server
 - **Send heartbeats** - Confirm device connectivity
 - **Receive track data** - Accept insect detection tracks (saved locally)
+- **Receive crop images** - Accept and store captured insect frames
+- **Receive background images** - Accept scheduled reference captures
+- **Receive video clips** - Accept recorded video segments
 
 Received data is stored in the `./received_data/` directory for verification.
 
@@ -84,7 +87,9 @@ curl http://YOUR_IP:5001/api/health
 |----------|--------|-------------|
 | `/api/heartbeat` | GET/POST | Connection test and heartbeat |
 | `/api/track` | POST | Receive track telemetry data (JSON) |
-| `/upload_track` | POST | Receive crop images (multipart/form-data) |
+| `/upload_crops` | POST | Upload crop images (multipart/form-data) |
+| `/upload_background` | POST | Upload background reference image |
+| `/upload_video` | POST | Upload video clip (MP4) |
 | `/api/health` | GET | Health check |
 
 ## Data Storage
@@ -94,8 +99,16 @@ curl http://YOUR_IP:5001/api/health
 - **Content**: JSON payload with track metadata and detections
 
 ### Crop Images (JPEG)
-- **Location**: `./received_data/{DOT_DIRECTORY}/{DOT_DIRECTORY}_crops/{TRACK_ID}/frame_000000.jpg`
+- **Location**: `./received_data/crops/{TRACK_ID}/frame_000000.jpg`
 - **Content**: JPEG images from insect detections
+
+### Background Images (JPEG)
+- **Location**: `./received_data/backgrounds/bg_YYYYMMDD_HHMMSS.jpg`
+- **Content**: Reference background images captured at scheduled times
+
+### Video Clips (MP4)
+- **Location**: `./received_data/videos/clip_YYYYMMDD_HHMMSS.mp4`
+- **Content**: Recorded video clips (1-minute duration)
 
 ## License
 
