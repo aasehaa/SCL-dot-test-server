@@ -29,7 +29,7 @@ CORS(app)
 
 # Configuration
 PORT = 5001
-DATA_DIR = Path("./received_data")
+DATA_DIR = Path(__file__).parent / "received_data"
 
 # Setup logging
 logging.basicConfig(
@@ -271,7 +271,7 @@ def upload_background():
     backgrounds_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        file = request.files.get('file')
+        file = request.files.get('image')
         if not file:
             logger.warning("No file in background upload")
             return jsonify({"error": "No file uploaded"}), 400
@@ -298,49 +298,121 @@ def upload_background():
 def upload_crops():
     """
     Receive crop images from iOS app (multipart/form-data).
-    
+
+    Headers:
+        X-Device-ID: Device UUID
+        X-Device-Name: Device name
+        X-DOT-Directory: DOT directory name (e.g., "uuid_20260309_143022")
+        X-Track-ID: Track UUID
+
+    Form Data:
+        files: JPEG files with filenames like "frame_000000.jpg"
+
+    Creates directory structure:
+        ./received_data/{dot_directory}/{dot_directory}_crops/{track_id}/
+
+    Returns:
+        200 OK on success
+        400 Bad Request on missing data
+    """
+    device_id = request.headers.get('X-Device-ID', 'unknown')
+    device_name = request.headers.get('X-Device-Name', 'Unknown Device')
+    ios_dot_directory = request.headers.get('X-DOT-Directory', '')
+    track_id = request.headers.get('X-Track-ID', '')
+
+    # Validate required headers
+    if not ios_dot_directory:
+        logger.error("Missing X-DOT-Directory header")
+        return jsonify({"error": "Missing X-DOT-Directory header"}), 400
+
+    if not track_id:
+        logger.error("Missing X-Track-ID header")
+        return jsonify({"error": "Missing X-Track-ID header"}), 400
+
+    # Clean track_id (prevent path traversal)
+    track_id = Path(track_id).name
+
+    logger.info(f"[UPLOAD] Crop upload from {device_name}")
+    logger.info(f"  DOT Directory: {ios_dot_directory}")
+    logger.info(f"  Track: {track_id[:8]}...")
+
+    try:
+        # Build directory structure
+        # ./received_data/{dot_directory}/{dot_directory}_crops/{track_id}/
+        dot_dir_path = DATA_DIR / ios_dot_directory
+        crops_dir_path = dot_dir_path / f"{ios_dot_directory}_crops"
+        track_dir_path = crops_dir_path / track_id
+
+        # Create directories
+        track_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # Process uploaded files
+        files = request.files.getlist('files')
+        if not files:
+            logger.warning("No files received in upload")
+            return jsonify({"error": "No files uploaded"}), 400
+
+        saved_count = 0
+        for file in files:
+            if not file.filename:
+                continue
+
+            # Extract filename and validate it's a frame file
+            filename = Path(file.filename).name
+
+            # Validate frame_000000.jpg format
+            if not re.match(r'frame_\d+\.jpg', filename, re.IGNORECASE):
+                logger.warning(f"Skipping invalid filename: {filename}")
+                continue
+
+            # Ensure consistent naming
+            frame_num = int(filename.split('_')[1].split('.')[0])
+            target_filename = f"frame_{frame_num:06d}.jpg"
+            full_path = track_dir_path / target_filename
+
+            # Save file
+            file.save(full_path)
+            saved_count += 1
+
+        logger.info(f"  Saved {saved_count} frames to {track_dir_path}")
+
+        return jsonify({
+            "status": "success",
+            "dot_directory": ios_dot_directory,
+            "track_id": track_id,
+            "frames_saved": saved_count
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error saving upload: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/upload_done', methods=['POST'])
+def upload_done():
+    """
+    Receive track completion marker from iOS app.
+
     Headers:
         X-Device-ID: Device UUID
         X-Device-Name: Device name
         X-Track-ID: Track UUID
-    
-    Form Data:
-        files: JPEG files
-    
+
     Returns:
         200 OK on success
     """
     device_id = request.headers.get('X-Device-ID', 'unknown')
     device_name = request.headers.get('X-Device-Name', 'Unknown Device')
     track_id = request.headers.get('X-Track-ID', 'unknown')
-    
-    crops_dir = DATA_DIR / "crops" / track_id
-    crops_dir.mkdir(parents=True, exist_ok=True)
-    
-    try:
-        files = request.files.getlist('files')
-        if not files:
-            logger.warning("No files in crop upload")
-            return jsonify({"error": "No files uploaded"}), 400
-        
-        saved_count = 0
-        for file in files:
-            if file.filename:
-                file.save(crops_dir / file.filename)
-                saved_count += 1
-        
-        logger.info(f"[CROPS] Received from {device_name} ({device_id[:8]}...)")
-        logger.info(f"  Track: {track_id[:8]}... | Saved: {saved_count} frames")
-        
-        return jsonify({
-            "status": "success",
-            "track_id": track_id,
-            "frames_saved": saved_count
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error saving crops: {e}")
-        return jsonify({"error": str(e)}), 500
+
+    logger.info(f"[DONE] Track upload complete from {device_name} ({device_id[:8]}...)")
+    logger.info(f"  Track: {track_id[:8]}...")
+
+    return jsonify({
+        "status": "success",
+        "track_id": track_id,
+        "message": "Upload completion acknowledged"
+    }), 200
 
 
 @app.route('/upload_video', methods=['POST'])
@@ -367,7 +439,7 @@ def upload_video():
     videos_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        file = request.files.get('file')
+        file = request.files.get('video')
         if not file:
             logger.warning("No file in video upload")
             return jsonify({"error": "No file uploaded"}), 400
@@ -407,11 +479,12 @@ if __name__ == '__main__':
     print()
     print("  Endpoints:")
     print(f"    GET/POST /api/heartbeat   - Connection test / heartbeat")
-    print(f"    POST     /api/track     - Receive track telemetry")
-    print(f"    POST     /upload_crops   - Upload crop images")
+    print(f"    POST     /api/track       - Receive track telemetry")
+    print(f"    POST     /upload_crops    - Upload crop images")
+    print(f"    POST     /upload_done     - Track upload completion marker")
     print(f"    POST     /upload_background - Upload background image")
-    print(f"    POST     /upload_video  - Upload video clip")
-    print(f"    GET      /api/health    - Health check")
+    print(f"    POST     /upload_video    - Upload video clip")
+    print(f"    GET      /api/health      - Health check")
     print()
     print("=" * 70)
     print()

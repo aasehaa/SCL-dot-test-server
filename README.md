@@ -54,6 +54,7 @@ This minimal server allows the iOS app to:
 - **Send heartbeats** - Confirm device connectivity
 - **Receive track data** - Accept insect detection tracks (saved locally)
 - **Receive crop images** - Accept and store captured insect frames
+- **Receive upload completion markers** - Know when a track's crops are fully uploaded
 - **Receive background images** - Accept scheduled reference captures
 - **Receive video clips** - Accept recorded video segments
 
@@ -88,6 +89,7 @@ curl http://YOUR_IP:5001/api/health
 | `/api/heartbeat` | GET/POST | Connection test and heartbeat |
 | `/api/track` | POST | Receive track telemetry data (JSON) |
 | `/upload_crops` | POST | Upload crop images (multipart/form-data) |
+| `/upload_done` | POST | Track upload completion marker |
 | `/upload_background` | POST | Upload background reference image |
 | `/upload_video` | POST | Upload video clip (MP4) |
 | `/api/health` | GET | Health check |
@@ -99,7 +101,7 @@ curl http://YOUR_IP:5001/api/health
 - **Content**: JSON payload with track metadata and detections
 
 ### Crop Images (JPEG)
-- **Location**: `./received_data/crops/{TRACK_ID}/frame_000000.jpg`
+- **Location**: `./received_data/{DOT_DIRECTORY}/{DOT_DIRECTORY}_crops/{TRACK_ID}/frame_000000.jpg`
 - **Content**: JPEG images from insect detections
 
 ### Background Images (JPEG)
